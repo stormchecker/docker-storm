@@ -19,6 +19,7 @@ LABEL org.opencontainers.image.authors="dev@stormchecker.org"
 ARG no_threads=2
 
 # Specify library versions
+ARG CVC5_VERSION=1.4.2
 ARG GUROBI_VERSION=13.0.2
 ARG GUROBI_SHORT_VERSION=13.0
 ARG HIGHS_VERSION=v1.15.1
@@ -34,8 +35,25 @@ RUN apt-get -y update \
         ca-certificates \
         curl \
         gnupg2 \
+        python3 \
+        python3-pyparsing \
+        python3-tomli \
         wget \
     && update-ca-certificates
+
+
+# Install cvc5
+##############
+# The build type has to be 'unrestricted': the default ('safe') and 'stable' reject some terms Storm creates (e.g. power).
+# Python (with tomli and pyparsing, installed above) is required by the cvc5 build.
+WORKDIR /opt/
+RUN git clone --depth 1 https://github.com/cvc5/cvc5 -b cvc5-${CVC5_VERSION} \
+    && cd cvc5 \
+    && ./configure.sh unrestricted --auto-download --poly --prefix=/usr/local \
+    && cd build \
+    && make -j $no_threads \
+    && make install \
+    && rm -r /opt/cvc5
 
 
 # Install Gurobi
