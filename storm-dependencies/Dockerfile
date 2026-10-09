@@ -47,13 +47,16 @@ RUN apt-get -y update \
 # The cvc5 build creates a Python virtual environment (python3-venv, installed above) and installs its own build
 # requirements into it with pip.
 WORKDIR /opt/
-RUN git clone --depth 1 https://github.com/cvc5/cvc5 -b cvc5-${CVC5_VERSION} \
-    && cd cvc5 \
+RUN curl -L -o cvc5.tar.gz https://github.com/cvc5/cvc5/archive/refs/tags/cvc5-${CVC5_VERSION}.tar.gz \
+    && tar -xzf cvc5.tar.gz \
+    && rm cvc5.tar.gz \
+    && cd cvc5-cvc5-${CVC5_VERSION} \
     && ./configure.sh unrestricted --auto-download --poly --prefix=/usr/local \
     && cd build \
     && make -j $no_threads \
     && make install \
-    && rm -r /opt/cvc5
+    && cd /opt \
+    && rm -r cvc5-cvc5-${CVC5_VERSION}
 
 
 # Install Gurobi
