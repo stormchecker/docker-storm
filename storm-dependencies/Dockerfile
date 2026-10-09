@@ -36,8 +36,7 @@ RUN apt-get -y update \
         curl \
         gnupg2 \
         python3 \
-        python3-pyparsing \
-        python3-tomli \
+        python3-venv \
         wget \
     && update-ca-certificates
 
@@ -45,7 +44,8 @@ RUN apt-get -y update \
 # Install cvc5
 ##############
 # The build type has to be 'unrestricted': the default ('safe') and 'stable' reject some terms Storm creates (e.g. power).
-# Python (with tomli and pyparsing, installed above) is required by the cvc5 build.
+# The cvc5 build creates a Python virtual environment (python3-venv, installed above) and installs its own build
+# requirements into it with pip.
 WORKDIR /opt/
 RUN git clone --depth 1 https://github.com/cvc5/cvc5 -b cvc5-${CVC5_VERSION} \
     && cd cvc5 \
