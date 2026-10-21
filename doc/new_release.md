@@ -7,7 +7,9 @@ The following steps should be performed to update the Docker images.
 
 ## Create storm-dependencies
 * Update the versions of the dependencies used in `storm-dependencies/Dockerfile`:
+  * [cvc5](https://github.com/cvc5/cvc5)
   * [Gurobi](https://github.com/Gurobi/docker-optimizer/tree/master)
+  * [HiGHS](https://github.com/ERGO-Code/HiGHS)
   * [MathSAT](https://mathsat.fbk.eu/download.html)
   * [Soplex](https://soplex.zib.de/)
   * [Spot](https://spot.lre.epita.fr/install.html)
