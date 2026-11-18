@@ -73,7 +73,7 @@ jobs:
         ghcr.io/stormchecker/storm-basesystem
         movesrwth/storm-basesystem
       meta-tags: |
-        type=raw,${{ matrix.image.name }}
+        type=raw,value=${{ matrix.image.name }}
     secrets:
       registry-auths: |
         - registry: ghcr.io
