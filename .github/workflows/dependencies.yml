@@ -1,14 +1,16 @@
 name: Build base with dependencies
-# Builds the Storm basesystem Docker images with dependencies and deploys them to Dockerhub
-# Build is distributed across multiple runners based on:
+# Builds the Storm basesystem Docker images with dependencies and deploys them to GHCR and Dockerhub
+# Build is distributed across multiple runners (one platform per runner) using Docker's reusable workflow, see:
 # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+#
+# Callers must grant `packages: write` (GHCR) and `id-token: write` (used to sign the provenance of the images).
 
 on:
   # needed to trigger the workflow manually
   workflow_dispatch:
     inputs:
       push:
-        description: 'Whether to push to Dockerhub'
+        description: 'Whether to push to GHCR and Dockerhub'
         required: true
         type: boolean
         default: true
@@ -16,117 +18,48 @@ on:
   workflow_call:
     inputs:
       push:
-        description: 'Whether to push to Dockerhub'
+        description: 'Whether to push to GHCR and Dockerhub'
         required: true
         type: boolean
         default: true
 
-env:
-  IMAGE: movesrwth/storm-dependencies
-  # GitHub runners currently have 4 cores
-  NR_JOBS: "4"
-
 jobs:
   build:
-    name: Build ${{ matrix.image.name }} on ${{ matrix.platform.name }}
-    runs-on: ${{ matrix.platform.runner }}
+    name: Build ${{ matrix.image.name }}
     strategy:
+      fail-fast: false
       matrix:
         image:
           - {name: "latest",
-             baseImg: "movesrwth/storm-basesystem:latest",
+             baseImg: "ghcr.io/stormchecker/storm-basesystem:latest",
              file: "storm-dependencies/Dockerfile"
             }
-        platform:
-          - {name: linux/amd64, runner: "ubuntu-latest"}
-          - {name: linux/arm64, runner: "ubuntu-24.04-arm"}
-    steps:
-      - name: Prepare
-        # Sanitize platform name
-        run: |
-          platform=${{ matrix.platform.name }}
-          echo "PLATFORM=${platform//\//-}" >> $GITHUB_ENV
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.IMAGE }}
-          # Use timestamped tag
-          tags: |
-            type=raw,value=${{ matrix.image.name }}
-            type=raw,value={{date 'YYYYMMDD'}}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Login to Docker Hub
-        if: ${{ inputs.push }}
-        uses: docker/login-action@v4
-        with:
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      output: image
+      push: ${{ inputs.push }}
+      registry-login: ${{ inputs.push }}
+      platforms: linux/amd64,linux/arm64
+      file: ${{ matrix.image.file }}
+      build-args: |
+        BASE_IMAGE=${{ matrix.image.baseImg }}
+        no_threads=4
+      meta-images: |
+        ghcr.io/stormchecker/storm-dependencies
+        movesrwth/storm-dependencies
+      # Use timestamped tag
+      meta-tags: |
+        type=raw,value=${{ matrix.image.name }}
+        type=raw,value={{date 'YYYYMMDD'}}
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        - registry: docker.io
           username: ${{ secrets.STORM_CI_DOCKER_USERNAME }}
           password: ${{ secrets.STORM_CI_DOCKER_TOKEN }}
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          file: ${{ matrix.image.file }}
-          # Set build arguments
-          build-args: |
-            BASE_IMAGE=${{ matrix.image.baseImg }}
-            no_threads=${{ env.NR_JOBS }}
-          platforms: ${{ matrix.platform.name }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
-      - name: Export digest
-        run: |
-          mkdir -p ${{ runner.temp }}/digests/dependencies-${{ matrix.image.name }}
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/dependencies-${{ matrix.image.name }}/${digest#sha256:}"
-      - name: Upload digest
-        uses: actions/upload-artifact@v7
-        with:
-          name: dependencies-${{ matrix.image.name }}-digests-${{ env.PLATFORM }}
-          path: ${{ runner.temp }}/digests/dependencies-${{ matrix.image.name }}/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    name: Merge manifests for ${{ matrix.image.name }}
-    if: ${{ inputs.push }}
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    strategy:
-      matrix:
-        image:
-          # Must be the same as above
-          - {name: "latest"}
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v8
-        with:
-          path: ${{ runner.temp }}/digests/dependencies-${{ matrix.image.name }}
-          pattern: dependencies-${{ matrix.image.name }}-digests-*
-          merge-multiple: true
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.IMAGE }}
-          # Use timestamped tag
-          tags: |
-            type=raw,value=${{ matrix.image.name }}
-            type=raw,value={{date 'YYYYMMDD'}}
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.STORM_CI_DOCKER_USERNAME }}
-          password: ${{ secrets.STORM_CI_DOCKER_TOKEN }}
-      - name: Create manifest list and push
-        working-directory: ${{ runner.temp }}/digests/dependencies-${{ matrix.image.name }}
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< '${{ steps.meta.outputs.json}}') \
-            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
