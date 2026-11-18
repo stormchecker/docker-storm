@@ -62,6 +62,7 @@ jobs:
       id-token: write
     with:
       output: image
+      job-name-prefix: storm-basesystem:${{ matrix.image.name }}
       push: ${{ inputs.push }}
       registry-login: ${{ inputs.push }}
       platforms: linux/amd64,linux/arm64
